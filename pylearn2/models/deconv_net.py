@@ -5,6 +5,7 @@ from pylearn2.space import Conv2DSpace
 from pylearn2.utils import sharedX
 
 import theano, theano.tensor as T
+from theano.tensor.nnet import conv
 
 import numpy as np
 
@@ -22,6 +23,9 @@ class DeconvNet(Model):
         self.__dict__.update(locals())
         del self.self
 
+        # hardcoded params TODO
+        self.shrink_thresh = 0.5
+        self.ista_rate = 0.005
         self.filter_shape = (8,3,5,5)
         (hid_channels, fc, fi, fj) = self.filter_shape
         assert fc == input_channels
@@ -29,7 +33,7 @@ class DeconvNet(Model):
         (vi, vj) = input_shape
         hidi = vi - fi + 1
         hidj = vj - fj + 1
-        hid_shape = (hidi, hidj)
+        hid_shape = [hidi, hidj]
 
         self.input_space = Conv2DSpace(input_shape, input_channels)
         self.output_space = Conv2DSpace(hid_shape, hid_channels)
@@ -44,30 +48,34 @@ class DeconvNet(Model):
         self._params.append(self.W)
 
         self.W_t = self.W.transpose((1,0,2,3))[:,:,::-1,::-1]
+        self.filter_shape_t = (input_channels, hid_channels, fi, fj)
 
     def reconstruct(self, z):
         '''Computes the reconstructed input given the the hidden layer'''
         return conv.conv2d(z, self.W_t, border_mode='full')
 
-    def ista_iter(self, x, z, alpha, rate, bsize=None):
+    def ista_iter(self, x, z):
         '''computes a single ista iteration'''
-        (vc, vi, vj) = self.vis_shape
-        (nf, fc, fi, fj) = self.filter_shape
-        (nf, hi, hj) = self.hid_shape
-        vis_shape = (self.batch_size,) + self.vis_shape
-        hid_shape = (self.batch_size,) + self.hid_shape
+        vc = self.input_space.nchannels
+        hc = self.output_space.nchannels
+        vis_shape = [self.batch_size, vc] + self.input_space.shape
+        hid_shape = [self.batch_size, hc] + self.output_space.shape
+
+        rate = self.ista_rate
+        shrink_thresh = self.shrink_thresh
+
 
         Wz = conv.conv2d(z, self.W_t,
                          image_shape=hid_shape,
-                         filter_shape=(vc, nf, fi, fj),
+                         filter_shape=self.filter_shape_t,
                          border_mode='full')
         
         Wd = conv.conv2d(Wz - x, self.W,
                          image_shape=vis_shape,
-                         filter_shape=(nf, vc, fi, fj),
+                         filter_shape=self.filter_shape,
                          border_mode='valid')
 
-        return _pos_shrink(z - rate*Wd, rate*alpha)
+        return _pos_shrink(z - rate*Wd, rate*shrink_thresh)
 
 
 class InferenceCallback(object):
@@ -76,18 +84,20 @@ class InferenceCallback(object):
         self.__dict__.update(locals())
         del self.self
 
-        self.x = sharedX(np.zeros((model.batch_size,) + self.input_shape))
+        (xi, xj) = model.input_shape
+        xc = model.input_space.nchannels
+        self.x_buf = sharedX(np.zeros((model.batch_size, xi, xj, xc)))
 
         # init buffers func
         xv = T.tensor4('xv')
-        xv.tag.test_value = self.x.get_value()
+        xv.tag.test_value = self.x_buf.get_value()
         self.do_init = theano.function([xv], (),
-                                  updates={x: xv,
-                                           code: T.zeros_like(z)})
+                                  updates={self.x_buf: xv,
+                                           code: T.zeros_like(code)})
 
         # single ista iter func
         self.do_ista_iter = theano.function((), (), updates=
-                {code: self.model.ista_iter(x, code, alpha, ista_rate)})
+              {code: self.model.ista_iter(self.x_buf, code)})
 
 
     def __call__(self, X, Y):
