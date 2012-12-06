@@ -6,6 +6,8 @@ from pylearn2.utils import sharedX
 
 import theano, theano.tensor as T
 
+import numpy as np
+
 def _pos_shrink(x, t):
     return T.maximum(0, x - t)
 
@@ -20,20 +22,26 @@ class DeconvNet(Model):
         self.__dict__.update(locals())
         del self.self
 
+        self.filter_shape = (8,3,5,5)
+        (hid_channels, fc, fi, fj) = self.filter_shape
+        assert fc == input_channels
+
+        (vi, vj) = input_shape
+        hidi = vi - fi + 1
+        hidj = vj - fj + 1
+        hid_shape = (hidi, hidj)
+
         self.input_space = Conv2DSpace(input_shape, input_channels)
         self.output_space = Conv2DSpace(hid_shape, hid_channels)
 
-        self.params = []
-
-        self.filter_shape = (8,3,5,5)
-        (nfilt, fc, fi, fj) = self.filter_shape
+        self._params = []
 
         init_W = np.random.randn(*self.filter_shape)
-        Wnorm = np.sqrt(np.sum(W.reshape((nfilt, -1))**2, axis=1))
-        W /= Wnorm.reshape((nfilt, 1, 1, 1))
+        Wnorm = np.sqrt(np.sum(init_W.reshape((hid_channels, -1))**2, axis=1))
+        init_W /= Wnorm.reshape((hid_channels, 1, 1, 1))
 
-        self.W = sharedX(value=W, name='W')
-        self.params.append(self.W)
+        self.W = sharedX(value=init_W, name='W')
+        self._params.append(self.W)
 
         self.W_t = self.W.transpose((1,0,2,3))[:,:,::-1,::-1]
 
@@ -92,7 +100,6 @@ class InferenceCallback(object):
         the model is available as self.model
         """
 
-
         self.do_init(X)
         for it in xrange(self.model.ista_iters):
             self.do_ista_iter()
@@ -115,7 +122,7 @@ class DeconvNetMSESparsity(Cost):
         """
 
         # Training algorithm should always supply the code
-        assert code is not None
+        assert deconv_net_code is not None
 
         recons = model.reconstruct(deconv_net_code)
         cost = T.sum((X - recons)**2)
