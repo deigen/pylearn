@@ -1,7 +1,7 @@
 from pylearn2.models.model import Model
 from pylearn2.costs.cost import Cost
 from pylearn2.costs.cost import FixedVarDescr
-from pylearn2.spaces import Conv2DSpace
+from pylearn2.space import Conv2DSpace
 from pylearn2.utils import sharedX
 
 import theano, theano.tensor as T
@@ -83,10 +83,15 @@ class InferenceCallback(object):
 
 
     def __call__(self, X, Y):
+        """
+        updates self.code
 
-        # X is a tensor for the input image of shape (batch_size, rows, cols, channels)
-        # the deconv net is available as self.model
-        # we need to update self.code
+        X: a numpy tensor for the input image of shape (batch_size, rows, cols, channels)
+        Y: unused
+
+        the model is available as self.model
+        """
+
 
         self.do_init(X)
         for it in xrange(self.model.ista_iters):
@@ -99,6 +104,15 @@ class DeconvNetMSESparsity(Cost):
     """
 
     def __call__(self, model, X, Y=None, deconv_net_code=None, **kwargs):
+        """
+            Returns a theano expression for the mean squared error.
+
+            model: a DeconvNet instance
+            X: a theano tensor of shape (batch_size, rows, cols, channels)
+            Y: unused
+            deconv_net_code: the theano shared variable representing the deconv net's code
+            kwargs: unused
+        """
 
         # Training algorithm should always supply the code
         assert code is not None
@@ -108,6 +122,15 @@ class DeconvNetMSESparsity(Cost):
         return cost
 
     def get_fixed_var_descr(self, model, X, Y):
+        """
+            Returns a FixedVarDescr describing how to update the code.
+            We use this mechanism because it is the easiest way to use a python
+            loop to do inference.
+
+            model: a DeconvNet instance
+            X: a theano tensor of shape (batch_size, rows, cols, channels)
+            Y: unused
+        """
 
         rval = FixedVarDescr()
 
