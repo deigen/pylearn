@@ -85,10 +85,10 @@ class DeconvNet(Model):
         """
 
         if self.W in updates:
-            update = updates[self.W]
-            norms = T.sqrt(T.sqr(updates).sum(axis=(1,2,3)))
-            update = update / (1e-7 + norms)
-            update[self.W] = update
+            W = updates[self.W]
+            norms = T.sqrt(T.sqr(W).sum(axis=(1,2,3)))
+            W = W / (1e-7 + norms)
+            updates[self.W] = W
 
 class InferenceCallback(object):
 
