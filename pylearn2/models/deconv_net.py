@@ -10,6 +10,8 @@ from theano.tensor.nnet import conv
 
 import numpy as np
 
+theano.config.compute_test_value = 'raise'
+
 def _pos_shrink(x, t):
     return T.maximum(0, x - t)
 
@@ -27,6 +29,7 @@ class DeconvNet(Model):
         # hardcoded params TODO
         self.shrink_thresh = 0.5
         self.ista_rate = 0.005
+        self.ista_iters = 1
         self.filter_shape = (8,3,5,5)
         (hid_channels, fc, fi, fj) = self.filter_shape
         assert fc == input_channels
@@ -37,7 +40,11 @@ class DeconvNet(Model):
         hid_shape = [hidi, hidj]
 
         self.input_space = Conv2DSpace(input_shape, input_channels)
-        self.output_space = Conv2DSpace(hid_shape, hid_channels)
+        self.output_space = Conv2DSpace(hid_shape, hid_channels,
+                                        axes=('b', 'c', 0, 1))
+
+        self.force_batch_size = batch_size
+        self._test_batch_size = batch_size
 
         self._params = []
 
@@ -65,12 +72,12 @@ class DeconvNet(Model):
         rate = self.ista_rate
         shrink_thresh = self.shrink_thresh
 
-
         Wz = conv.conv2d(z, self.W_t,
                          image_shape=hid_shape,
                          filter_shape=self.filter_shape_t,
                          border_mode='full')
         
+        x = x.transpose((0,3,1,2))
         Wd = conv.conv2d(Wz - x, self.W,
                          image_shape=vis_shape,
                          filter_shape=self.filter_shape,
@@ -87,7 +94,7 @@ class DeconvNet(Model):
         if self.W in updates:
             W = updates[self.W]
             norms = T.sqrt(T.sqr(W).sum(axis=(1,2,3)))
-            W = W / (1e-7 + norms)
+            W = W / (1e-7 + norms.reshape((norms.shape[0], 1, 1, 1)))
             updates[self.W] = W
 
 class InferenceCallback(object):
@@ -147,7 +154,7 @@ class DeconvNetMSESparsity(Cost):
         assert deconv_net_code is not None
 
         recons = model.reconstruct(deconv_net_code)
-        cost = T.sum((X - recons)**2)
+        cost = T.sum((recons - X.transpose((0,3,1,2)))**2)
         return cost
 
     def get_fixed_var_descr(self, model, X, Y):

@@ -2,7 +2,7 @@
     model: !obj:pylearn2.models.deconv_net.DeconvNet {
         input_shape: [32, 32],
         input_channels: 3,
-        batch_size: 1000
+        batch_size: 100
     },
     algorithm: !obj:pylearn2.training_algorithms.sgd.SGD {
         learning_rate: 1e-3,
