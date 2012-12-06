@@ -3,6 +3,7 @@ from pylearn2.costs.cost import Cost
 from pylearn2.costs.cost import FixedVarDescr
 from pylearn2.space import Conv2DSpace
 from pylearn2.utils import sharedX
+import theano.tensor as T
 
 import theano, theano.tensor as T
 from theano.tensor.nnet import conv
@@ -77,6 +78,17 @@ class DeconvNet(Model):
 
         return _pos_shrink(z - rate*Wd, rate*shrink_thresh)
 
+    def censor_updates(self, updates):
+        """
+        Modify the updates proposed by the training algorithm to
+        preserve the norm constraint on the kernels.
+        """
+
+        if self.W in updates:
+            update = updates[self.W]
+            norms = T.sqrt(T.sqr(updates).sum(axis=(1,2,3)))
+            update = update / (1e-7 + norms)
+            update[self.W] = update
 
 class InferenceCallback(object):
 
